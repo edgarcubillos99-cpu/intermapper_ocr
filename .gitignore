@@ -1,0 +1,31 @@
+# Entorno virtual (no versionar binarios pesados ni dependencias locales)
+venv/
+.venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# Herramientas / entorno
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# IDE y secretos
+.idea/
+.vscode/
+.env
+.env.*
+
+# Playwright (artefactos locales si se generan fuera de venv)
+playwright-report/
+test-results/

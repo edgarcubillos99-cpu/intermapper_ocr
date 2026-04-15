@@ -1,0 +1,1 @@
+print("Proyecto Intermapper OCR iniciado 🚀")
