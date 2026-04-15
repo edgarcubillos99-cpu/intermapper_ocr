@@ -17,7 +17,7 @@ class IntermapperScraper:
             await page.goto(self.base_url, wait_until="networkidle")
             
             # Verificamos que cargó el mapa buscando el id="imap"
-            await page.wait_for_selector("map#imap", timeout=10000)
+            await page.wait_for_selector("map#imap", state="attached", timeout=10000)
             logger.info("Acceso confirmado. Mapa principal cargado.")
             
             return page

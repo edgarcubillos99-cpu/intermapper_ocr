@@ -23,9 +23,6 @@ async def main():
         # Para pruebas, puedes comentar esto y usar una lista estática de 2 URLs
         site_links = await scraper.get_site_links(main_page)
         
-        # Limitar para pruebas (ej. procesar solo los primeros 5)
-        site_links = site_links[:5] 
-        
         # 3. Procesar en paralelo usando asyncio.gather y un Semáforo
         # El semáforo evita que abramos 500 pestañas de golpe y saturemos la RAM
         semaphore = asyncio.Semaphore(Config.WORKERS)
