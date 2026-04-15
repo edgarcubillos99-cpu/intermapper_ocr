@@ -29,3 +29,6 @@ htmlcov/
 # Playwright (artefactos locales si se generan fuera de venv)
 playwright-report/
 test-results/
+
+# screenshots
+screenshots/
