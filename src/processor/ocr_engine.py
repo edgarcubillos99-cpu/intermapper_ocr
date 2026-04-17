@@ -1,5 +1,6 @@
 import cv2
 import pytesseract
+from pytesseract import Output
 import numpy as np
 from pathlib import Path
 from src.logger import get_logger
@@ -8,53 +9,90 @@ logger = get_logger(__name__)
 
 class OCREngine:
     def __init__(self):
-        # Configuramos Tesseract para que asuma un bloque de texto uniforme (--psm 6) o disperso (--psm 11)
-        # El psm 11 (Sparse text) suele funcionar mejor para mapas de red
-        self.custom_config = r'--oem 3 --psm 11'
+        self.custom_config = r'--oem 3 --psm 6'
 
-    def preprocess_image(self, image_path: Path) -> np.ndarray:
+    def _remove_green_noise(self, img: np.ndarray) -> np.ndarray:
         """
-        Limpia la imagen usando OpenCV para mejorar la precisión de Tesseract.
+        Detecta píxeles verdes (líneas de conexión, íconos de estado en Intermapper)
+        y los convierte en blanco puro para que no interfieran con el texto.
         """
-        logger.info(f"Preprocesando imagen: {image_path.name}")
-        
-        # 1. Cargar imagen
-        img = cv2.imread(str(image_path))
-        if img is None:
-            raise FileNotFoundError(f"No se pudo cargar la imagen: {image_path}")
+        # 1. Convertir la imagen de BGR (formato por defecto de OpenCV) a HSV
+        hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
 
-        # 2. Convertir a escala de grises
-        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        # 2. Definir el rango del color verde en HSV
+        # Nota: En OpenCV, Hue (Tono) va de 0 a 179. El verde está entre 35 y 85.
+        # Saturation y Value van de 0 a 255. Ponemos un rango amplio para captar tonos oscuros y claros.
+        lower_green = np.array([15, 30, 30])
+        upper_green = np.array([85, 255, 255])
 
-        # 3. Escalar la imagen (hacerla más grande ayuda a Tesseract con textos pequeños)
-        # Ampliamos al 200% usando interpolación cúbica
-        gray = cv2.resize(gray, None, fx=3, fy=3, interpolation=cv2.INTER_CUBIC)
+        # 3. Crear una máscara (una imagen en blanco y negro donde lo blanco es lo verde)
+        mask = cv2.inRange(hsv, lower_green, upper_green)
 
-        # 4. Aplicar un filtro bilateral para quitar ruido pero mantener los bordes del texto afilados
-        blur = cv2.bilateralFilter(gray, 9, 75, 75)
+        # 4. Reemplazar los píxeles detectados por la máscara con color blanco (255, 255, 255 en BGR)
+        img_cleaned = img.copy()
+        img_cleaned[mask > 0] = (255, 255, 255)
 
-        # 5. Binarización adaptativa (convierte a blanco y negro puro, ideal para fondos irregulares)
-        # El texto quedará negro sobre fondo blanco
-        binary = cv2.adaptiveThreshold(
-            blur, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 31, 2
-        )
-
-        return binary
+        return img_cleaned
 
     def extract_text(self, image_path: Path) -> str:
-        """
-        Preprocesa la imagen y extrae todo el texto crudo.
-        """
-        try:
-            processed_img = self.preprocess_image(image_path)
-            
-            # (pruebas) guardar la imagen procesada para ver cómo la está viendo Tesseract
-            cv2.imwrite(f"debug_{image_path.name}", processed_img)
+        logger.info(f"Procesando imagen con Filtrado de Color y ROI: {image_path.name}")
+        img = cv2.imread(str(image_path))
+        if img is None:
+            raise FileNotFoundError(f"No se pudo cargar: {image_path}")
 
-            logger.info("Extrayendo texto con Tesseract...")
-            text = pytesseract.image_to_string(processed_img, config=self.custom_config)
+        # --- NUEVO: DEFENSA CROMÁTICA ANTES DE CUALQUIER PROCESAMIENTO ---
+        img = self._remove_green_noise(img)
+        
+        # (Opcional) Guarda la imagen limpia general para que veas la magia
+        cv2.imwrite(f"debug_sin_verde_{image_path.name}", img)
+
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        
+        # --- PASADA 1: BÚSQUEDA ESPACIAL ---
+        gray_base = cv2.resize(gray, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
+        
+        logger.info("Detectando coordenadas de dispositivos OSNAP...")
+        d = pytesseract.image_to_data(gray_base, output_type=Output.DICT, config=r'--oem 3 --psm 11')
+
+        n_boxes = len(d['text'])
+        extracted_blocks = []
+
+        for i in range(n_boxes):
+            word = d['text'][i]
             
-            return text
-        except Exception as e:
-            logger.error(f"Error procesando {image_path.name}: {e}")
-            return ""
+            if 'OSNAP' in word.upper():
+                x, y, w, h = d['left'][i], d['top'][i], d['width'][i], d['height'][i]
+
+                # --- PASADA 2: RECORTAR (CROP) LA REGIÓN ---
+                margen_izq = 30
+                margen_der = 250   
+                margen_arriba = 20
+                margen_abajo = 250 
+
+                y_start = max(0, y - margen_arriba)
+                y_end = min(gray_base.shape[0], y + h + margen_abajo)
+                x_start = max(0, x - margen_izq)
+                x_end = min(gray_base.shape[1], x + w + margen_der)
+
+                roi = gray_base[y_start:y_end, x_start:x_end]
+
+                # --- EL SÚPER ZOOM Y LIMPIEZA ---
+                roi_zoomed = cv2.resize(roi, None, fx=3, fy=3, interpolation=cv2.INTER_CUBIC)
+                blur = cv2.bilateralFilter(roi_zoomed, 9, 75, 75)
+                
+                # Binarización Otsu
+                _, binary = cv2.threshold(blur, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+
+                # Operación Morfológica
+                kernel = np.ones((2, 2), np.uint8)
+                binary = cv2.dilate(binary, kernel, iterations=1)
+                binary = cv2.erode(binary, kernel, iterations=1)
+
+                clean_name = word.replace(':', '').replace('|', '').replace('/', '')
+                cv2.imwrite(f"debug_roi_{clean_name}_{i}.png", binary)
+
+                block_text = pytesseract.image_to_string(binary, config=self.custom_config)
+                extracted_blocks.append(block_text)
+
+        final_text = "\n--- NUEVO BLOQUE AP ---\n".join(extracted_blocks)
+        return final_text
