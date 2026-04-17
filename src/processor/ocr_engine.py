@@ -44,7 +44,7 @@ class OCREngine:
         img = self._remove_green_noise(img)
         
         # (Opcional) Guarda la imagen limpia general para que veas la magia
-        cv2.imwrite(f"debug_sin_verde_{image_path.name}", img)
+        #cv2.imwrite(f"debug_sin_verde_{image_path.name}", img)
 
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         
