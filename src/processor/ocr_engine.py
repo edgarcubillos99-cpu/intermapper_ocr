@@ -77,8 +77,8 @@ class OCREngine:
                 roi = gray_base[y_start:y_end, x_start:x_end]
 
                 # --- EL SÚPER ZOOM Y LIMPIEZA ---
-                roi_zoomed = cv2.resize(roi, None, fx=3, fy=3, interpolation=cv2.INTER_CUBIC)
-                blur = cv2.bilateralFilter(roi_zoomed, 9, 75, 75)
+                roi_zoomed = cv2.resize(roi, None, fx=1.5, fy=1.5, interpolation=cv2.INTER_LINEAR)
+                blur = cv2.medianBlur(roi_zoomed, 3)
                 
                 # Binarización Otsu
                 _, binary = cv2.threshold(blur, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
@@ -89,7 +89,7 @@ class OCREngine:
                 binary = cv2.erode(binary, kernel, iterations=1)
 
                 clean_name = word.replace(':', '').replace('|', '').replace('/', '')
-                cv2.imwrite(f"debug_roi_{clean_name}_{i}.png", binary)
+                #cv2.imwrite(f"debug_roi_{clean_name}_{i}.png", binary)
 
                 block_text = pytesseract.image_to_string(binary, config=self.custom_config)
                 extracted_blocks.append(block_text)

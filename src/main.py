@@ -1,104 +1,113 @@
 import os
 import time
+import asyncio
 from pathlib import Path
 import concurrent.futures
+
+# CONTROLAR A TESSERACT ---
+# Evita que cada worker de PyTesseract sature la CPU intentando usar multithreading interno
+os.environ['OMP_THREAD_LIMIT'] = '1'
+#os.environ['TESSDATA_PREFIX'] = '/usr/share/tesseract-ocr/4.00/tessdata' # O la ruta de tu tessdata
+
 from src.logger import get_logger
 from src.processor.ocr_engine import OCREngine
 from src.processor.extractor import DataExtractor
 from src.database.db_manager import DBManager
-from src.scraper.navigator import Navigator
+from src.scraper.browser import BrowserManager
+from src.scraper.navigator import IntermapperScraper
+from src.config import Config
 
 logger = get_logger(__name__)
 
 def process_single_tower(tower_name: str, image_path: Path):
-    """
-    WORKER FUNCTION: Esta función se ejecuta en un núcleo de CPU independiente.
-    Es vital instanciar las clases pesadas (OCR y DB) DENTRO de esta función 
-    para evitar choques de memoria entre procesos (Pickling Errors).
-    """
+    """WORKER FUNCTION: Corre en su propio proceso"""
     logger.info(f"[{tower_name}] Iniciando procesamiento en PID: {os.getpid()}")
-    
     try:
-        # 1. Instancias locales exclusivas para este proceso
         ocr = OCREngine()
         db = DBManager()
         
-        # 2. Extraer texto crudo (Operación pesada de CPU)
-        logger.info(f"[{tower_name}] Ejecutando OpenCV y Tesseract...")
         raw_text = ocr.extract_text(image_path)
-        
-        # 3. Extraer datos estructurados con Regex
         devices = DataExtractor.extract_ap_data(raw_text, tower_name)
         
-        # 4. Guardar en Base de Datos MySQL
         if devices:
             db.save_site_data(tower_name, str(image_path), devices)
-            logger.info(f"[{tower_name}] ✅ {len(devices)} dispositivos guardados en BD.")
+            logger.info(f"[{tower_name}] ✅ {len(devices)} dispositivos guardados/actualizados.")
         else:
             logger.warning(f"[{tower_name}] ⚠️ No se detectaron dispositivos OSNAP.")
             
         return {"status": "success", "torre": tower_name, "count": len(devices)}
-    
     except Exception as e:
         logger.error(f"[{tower_name}] ❌ Error crítico: {e}")
         return {"status": "error", "torre": tower_name, "error": str(e)}
 
+async def run_scraper_phase():
+    """Ejecuta la Fase 1: Navegación Asíncrona con Playwright"""
+    logger.info("--- INICIANDO FASE 1: NAVEGACIÓN Y CAPTURAS ---")
+    browser_manager = BrowserManager()
+    context = await browser_manager.start()
+    
+    scraper = IntermapperScraper(context)
+    page = await scraper.login()
+    
+    urls = await scraper.get_site_links(page)
+    await page.close()
+    
+    sites_to_process = []
+    semaphore = asyncio.Semaphore(Config.WORKERS)
+    
+    # Navegamos y capturamos cada submapa de manera controlada
+    tasks = [scraper.process_site(url, semaphore) for url in urls]
+    results = await asyncio.gather(*tasks)
+    
+    await browser_manager.stop()
+    
+    # Leer el directorio de capturas para alimentar la Fase 2
+    for screenshot_path in Config.SCREENSHOT_DIR.glob("*.png"):
+        # Extraemos el nombre de la torre basado en el archivo (puedes ajustar esta lógica)
+        import re
+        tower_name = re.sub(r'^(Map_and_Charts__|Map__)', '', screenshot_path.stem, flags=re.IGNORECASE)
+        tower_name = tower_name.replace('_', ' ').strip()
+        sites_to_process.append((tower_name, screenshot_path))
+        
+    return sites_to_process
 
 def main():
     logger.info("Iniciando Pipeline de Extracción Intermapper de Alto Rendimiento...")
     start_time = time.time()
+    Config.setup_directories()
     
-    # =========================================================
-    # FASE 1: SCRAPING (I/O Bound)
-    # =========================================================
-    logger.info("--- INICIANDO FASE 1: NAVEGACIÓN Y CAPTURAS ---")
+    # FASE 1: SCRAPING (I/O Bound) - Ejecutado en el Loop de Eventos
+    sites_to_process = asyncio.run(run_scraper_phase())
     
-    # Aquí irá el loop de tu scraper. El objetivo es que devuelva una 
-    # lista de tuplas con el nombre de la torre y la ruta de la imagen generada.
+    logger.info(f"Fase 1 completada. {len(sites_to_process)} capturas listas para OCR.")
     
-    nav = Navigator()
-    nav.login()
-    sites_to_process = nav.capture_all_towers()
-    
-    logger.info(f"Fase 1 completada. {len(sites_to_process)} capturas en cola.")
-    
-    # =========================================================
     # FASE 2: PROCESAMIENTO PARALELO OCR (CPU Bound)
-    # =========================================================
+    if not sites_to_process:
+        logger.warning("No se generaron capturas. Finalizando.")
+        return
+
     logger.info("--- INICIANDO FASE 2: PROCESAMIENTO MULTI-CORE ---")
-    
-    # Dejamos 1 o 2 núcleos libres para el Sistema Operativo y MySQL
     max_cores = max(1, os.cpu_count() - 2) 
-    logger.info(f"Encendiendo motores de OCR... Utilizando {max_cores} núcleos.")
     
-    # Usamos ProcessPoolExecutor en lugar de ThreadPoolExecutor.
-    # Los hilos (Threads) en Python comparten memoria (GIL) y no sirven para tareas
-    # matemáticas pesadas como OpenCV. Los Procesos sí usan CPUs reales.
     with concurrent.futures.ProcessPoolExecutor(max_workers=max_cores) as executor:
-        
-        # Mapeamos las tareas a los procesadores libres
         futures = {
             executor.submit(process_single_tower, tower, path): tower 
             for tower, path in sites_to_process
         }
         
-        # A medida que cada núcleo termina su imagen, capturamos el resultado
         for future in concurrent.futures.as_completed(futures):
             torre = futures[future]
             try:
-                result = future.result()
-                if result['status'] == 'success':
-                    logger.info(f"🏆 Finalizado: {torre}")
+                future.result()
             except Exception as exc:
                 logger.error(f"💥 El worker de {torre} generó una excepción: {exc}")
 
-    # =========================================================
-    # CIERRE Y MÉTRICAS
-    # =========================================================
-    elapsed_time = time.time() - start_time
     logger.info("=" * 60)
-    logger.info(f"🚀 PIPELINE COMPLETADO EN {elapsed_time:.2f} SEGUNDOS 🚀")
+    logger.info(f"🚀 PIPELINE COMPLETADO EN {time.time() - start_time:.2f} SEGUNDOS 🚀")
     logger.info("=" * 60)
 
 if __name__ == '__main__':
+    # Necesario para multiprocessing en Windows/macOS
+    import multiprocessing
+    multiprocessing.freeze_support()
     main()
