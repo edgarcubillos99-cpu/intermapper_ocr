@@ -48,6 +48,8 @@ class DBManager:
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS torres (
                     nombre VARCHAR(150) PRIMARY KEY,
+                    latitud VARCHAR(50),
+                    longitud VARCHAR(50),
                     fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
@@ -93,7 +95,7 @@ class DBManager:
                     a.fecha_extraccion
                 FROM torres t
                 LEFT JOIN dispositivos_ap a ON t.nombre = a.torre_nombre
-                LEFT JOIN capturas c ON t.nombre = c.torre_nombre;
+                    LEFT JOIN submapas c ON t.nombre = c.torre_nombre;
             """)
 
             # Vista 2: Resumen agrupado
@@ -116,7 +118,8 @@ class DBManager:
             cursor.close()
             conn.close()
 
-    def save_site_data(self, tower_name: str, screenshot_path: str, devices: list):
+    def save_site_data(self, tower_name: str, screenshot_path: str, devices: list, coords: tuple):
+        lat, lon = coords
         conn = self.get_connection()
         if not conn: return
 
@@ -125,11 +128,17 @@ class DBManager:
             conn.start_transaction()
 
             # 1. Insertar Torre
-            cursor.execute("INSERT IGNORE INTO torres (nombre) VALUES (%s)", (tower_name,))
+            cursor.execute("""
+            INSERT INTO torres (nombre, latitud, longitud) 
+            VALUES (%s, %s, %s)
+            ON DUPLICATE KEY UPDATE 
+            latitud = VALUES(latitud), 
+            longitud = VALUES(longitud)
+            """, (tower_name, lat, lon))
 
             # 2. Insertar o Actualizar Captura (Usando tower_name directo)
             cursor.execute("""
-                INSERT INTO capturas (torre_nombre, ruta_imagen) 
+                INSERT INTO submapas (torre_nombre, ruta_imagen) 
                 VALUES (%s, %s)
                 ON DUPLICATE KEY UPDATE 
                 ruta_imagen = VALUES(ruta_imagen), 

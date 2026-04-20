@@ -34,23 +34,28 @@ class OCREngine:
 
         return img_cleaned
 
-    def extract_text(self, image_path: Path) -> str:
+    def extract_text(self, image_path: Path) -> dict:
         logger.info(f"Procesando imagen con Filtrado de Color y ROI: {image_path.name}")
         img = cv2.imread(str(image_path))
         if img is None:
             raise FileNotFoundError(f"No se pudo cargar: {image_path}")
 
-        # --- NUEVO: DEFENSA CROMÁTICA ANTES DE CUALQUIER PROCESAMIENTO ---
+        # DEFENSA CROMÁTICA ANTES DE CUALQUIER PROCESAMIENTO ---
         img = self._remove_green_noise(img)
         
-        # (Opcional) Guarda la imagen limpia general para que veas la magia
+        # (Opcional) Guarda la imagen limpia general para ver la magia
         #cv2.imwrite(f"debug_sin_verde_{image_path.name}", img)
 
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        
-        # --- PASADA 1: BÚSQUEDA ESPACIAL ---
+
         gray_base = cv2.resize(gray, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
+
+        # --- PASADA 0: Texto general para coordenadas ---
+        # Usamos PSM 3 (Totalmente automático) para leer el encabezado
+        logger.info("Extrayendo texto general para coordenadas...")
+        header_text = pytesseract.image_to_string(gray_base, config='--oem 3 --psm 3')
         
+        # --- PASADA 1: BÚSQUEDA ESPACIAL ---  
         logger.info("Detectando coordenadas de dispositivos OSNAP...")
         d = pytesseract.image_to_data(gray_base, output_type=Output.DICT, config=r'--oem 3 --psm 11')
 
@@ -94,5 +99,7 @@ class OCREngine:
                 block_text = pytesseract.image_to_string(binary, config=self.custom_config)
                 extracted_blocks.append(block_text)
 
-        final_text = "\n--- NUEVO BLOQUE AP ---\n".join(extracted_blocks)
-        return final_text
+        return {
+            "header_text": header_text,
+            "devices_text": "\n--- NUEVO BLOQUE AP ---\n".join(extracted_blocks),
+        }

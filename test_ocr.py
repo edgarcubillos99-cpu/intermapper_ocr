@@ -26,11 +26,10 @@ def test_full_extraction():
 
     # 1. Extraer texto crudo (Fase 2)
     engine = OCREngine()
-    raw_text = engine.extract_text(test_image)
+    ocr_result = engine.extract_text(test_image)
 
     # 2. Procesar datos estructurados (Fase 3)
-    extractor = DataExtractor()
-    structured_data = extractor.extract_ap_data(raw_text, tower_name)
+    structured_data = DataExtractor.extract_ap_data(ocr_result["devices_text"], tower_name)
 
     # 3. Mostrar en JSON bonito
     print(json.dumps(structured_data, indent=4, ensure_ascii=False))

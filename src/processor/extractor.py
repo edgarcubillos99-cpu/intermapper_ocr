@@ -10,6 +10,23 @@ class DataExtractor:
         return val.replace('LO', '10').replace('L0', '10')
 
     @staticmethod
+    def extract_coordinates(text: str):
+        """
+        Busca coordenadas decimales en el texto.
+        Patrón: Digitos.Decimales seguido de espacio y Digitos.Decimales
+        """
+        # El regex busca: (signo opcional) numero . decimales
+        coord_pattern = r"(-?\d+\.\d+)\s+(-?\d+\.\d+)"
+        match = re.search(coord_pattern, text)
+
+        if match:
+            lat = match.group(1)
+            lon = match.group(2)
+            return lat, lon
+
+        return None, None
+
+    @staticmethod
     def extract_ap_data(raw_text: str, tower_name: str) -> list:
         # 1. Separar el texto crudo usando el delimitador que inyectamos en el OCR
         blocks = raw_text.split('--- NUEVO BLOQUE AP ---')

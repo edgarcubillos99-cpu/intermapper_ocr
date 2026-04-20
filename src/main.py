@@ -26,11 +26,12 @@ def process_single_tower(tower_name: str, image_path: Path):
         ocr = OCREngine()
         db = DBManager()
         
-        raw_text = ocr.extract_text(image_path)
-        devices = DataExtractor.extract_ap_data(raw_text, tower_name)
-        
+        ocr_result = ocr.extract_text(image_path)
+        devices = DataExtractor.extract_ap_data(ocr_result["devices_text"], tower_name)
+        coords = DataExtractor.extract_coordinates(ocr_result.get("header_text") or "")
+
         if devices:
-            db.save_site_data(tower_name, str(image_path), devices)
+            db.save_site_data(tower_name, str(image_path), devices, coords)
             logger.info(f"[{tower_name}] ✅ {len(devices)} dispositivos guardados/actualizados.")
         else:
             logger.warning(f"[{tower_name}] ⚠️ No se detectaron dispositivos OSNAP.")
