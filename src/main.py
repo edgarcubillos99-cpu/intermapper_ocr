@@ -6,9 +6,7 @@ from src.logger import get_logger
 from src.processor.ocr_engine import OCREngine
 from src.processor.extractor import DataExtractor
 from src.database.db_manager import DBManager
-
-# Asumo que tienes tu navegador importado (descomenta según tus archivos reales)
-# from src.scraper.navigator import Navigator
+from src.scraper.navigator import Navigator
 
 logger = get_logger(__name__)
 
@@ -60,7 +58,7 @@ def main():
     
     nav = Navigator()
     nav.login()
-    sites_to_process = nav.capture_all_towers() # Implementación sugerida
+    sites_to_process = nav.capture_all_towers()
     
     logger.info(f"Fase 1 completada. {len(sites_to_process)} capturas en cola.")
     
@@ -73,7 +71,7 @@ def main():
     max_cores = max(1, os.cpu_count() - 2) 
     logger.info(f"Encendiendo motores de OCR... Utilizando {max_cores} núcleos.")
     
-    # IMPORTANTE: Usamos ProcessPoolExecutor en lugar de ThreadPoolExecutor.
+    # Usamos ProcessPoolExecutor en lugar de ThreadPoolExecutor.
     # Los hilos (Threads) en Python comparten memoria (GIL) y no sirven para tareas
     # matemáticas pesadas como OpenCV. Los Procesos sí usan CPUs reales.
     with concurrent.futures.ProcessPoolExecutor(max_workers=max_cores) as executor:
