@@ -1,0 +1,14 @@
+services:
+  intermapper_ocr_agent:
+    build: .
+    container_name: noc_intermapper_agent
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - TZ=America/Puerto_Rico
+    volumes:
+      # Persistencia de logs para monitoreo
+      - ./logs:/app/logs
+      # (Opcional) Persistencia de capturas si decides no borrarlas en algún momento
+      - ./screenshots:/app/screenshots

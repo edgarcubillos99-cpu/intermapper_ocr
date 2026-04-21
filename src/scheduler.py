@@ -1,36 +1,28 @@
 import time
 import schedule
-import multiprocessing
 from src.logger import get_logger
-from src.main import main
+from src.main import main  # Tu función principal que orquesta todo
 
 logger = get_logger(__name__)
 
 def job():
-    """Función envoltura que ejecuta tu pipeline principal"""
-    logger.info("🕒 Iniciando ejecución programada semanal...")
+    logger.info("=== INICIANDO CICLO DE EXTRACCIÓN PROGRAMADO ===")
     try:
-        # Llama a la función main() de main.py
         main()
-        logger.info("✅ Ejecución programada finalizada con éxito.")
+        logger.info("=== CICLO FINALIZADO EXITOSAMENTE ===")
     except Exception as e:
-        logger.error(f"❌ Error crítico en la ejecución programada: {e}")
-
-def start_scheduler():
-    # Configurar la ejecución: Todos los domingos a las 03:00 AM
-    #schedule.every().sunday.at("03:00").do(job)
-    schedule.every(15).minutes.do(job)
-    
-    logger.info("🚀 Servicio de automatización (Scheduler) iniciado correctamente.")
-    logger.info("Esperando a la próxima fecha de ejecución programada...")
-
-    # Bucle infinito que mantiene el proceso vivo y evalúa las tareas
-    while True:
-        schedule.run_pending()
-        # Duerme 60 segundos para no consumir CPU innecesariamente
-        time.sleep(60)
+        logger.error(f"Error crítico en el ciclo: {e}")
 
 if __name__ == "__main__":
-    # Soporte para multiprocessing (necesario por el ProcessPoolExecutor del main)
-    multiprocessing.freeze_support()
-    start_scheduler()
+    logger.info("Iniciando el Demonio del Scheduler (Intervalo: 15 minutos)")
+    
+    # Ejecutamos una vez inmediatamente al levantar el contenedor
+    job()
+    
+    # Programamos la ejecución cada 15 minutos
+    schedule.every(15).minutes.do(job)
+
+    # Bucle infinito para mantener vivo el contenedor
+    while True:
+        schedule.run_pending()
+        time.sleep(1)
