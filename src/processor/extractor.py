@@ -12,18 +12,64 @@ class DataExtractor:
     @staticmethod
     def extract_coordinates(text: str):
         """
-        Busca coordenadas decimales en el texto.
-        Patrón: Digitos.Decimales seguido de espacio y Digitos.Decimales
+        Extrae coordenadas usando un 'Cerco Geográfico Estricto' (Bounding Box PR).
+        Evita colisiones cuando los decimales de la latitud empiezan por 6 (Ej: 18,619...).
         """
-        # El regex busca: (signo opcional) numero . decimales
-        coord_pattern = r"(-?\d+\.\d+)\s+(-?\d+\.\d+)"
-        match = re.search(coord_pattern, text)
+        if not text:
+            return None, None
+            
+        search_block = text
+        context_match = re.search(r'(Map:|OSN[.,_\- ]*)', text, re.IGNORECASE)
+        
+        if context_match:
+            start_idx = context_match.start()
+            search_block = text[start_idx:start_idx+250] 
 
+        # --- PASO 2: CERCO GEOGRÁFICO ESTRICTO ---
+        # LATITUD: Empieza con 1, sigue con 7, 8 o 9 (o S para 8). Ej: 18
+        # LONGITUD: Empieza con 6 (o G), sigue con 5, 6 o 7 (o S para 5/6). Ej: -66
+        # [.,\s]* permite cualquier cantidad de comas, puntos o espacios en el medio
+        coord_pattern = r"([-~_]?\s*[1Il]\s*[789Ss][.,\s]*[\dOoIilSs\s]{3,20})[^\d-]{1,30}([-~_]?\s*[6G]\s*[567Ss][.,\s]*[\dOoIilSs\s]{3,20})"
+        
+        match = re.search(coord_pattern, search_block, re.IGNORECASE)
+        
         if match:
-            lat = match.group(1)
-            lon = match.group(2)
-            return lat, lon
+            # --- PASO 3: LA APLANADORA ABSOLUTA ---
+            def clean_coordinate(raw_str):
+                s = re.sub(r'\s+', '', raw_str).lower()
+                s = s.replace('s', '8').replace('o', '0').replace('l', '1').replace('i', '1').replace('g', '6')
+                
+                # Reemplazar cualquier bloque de puntos/comas por un solo punto
+                s = re.sub(r'[.,]+', '.', s)
+                s = s.replace('~', '-').replace('_', '-')
+                
+                # Forzar un ÚNICO punto decimal (Si Tesseract leyó "18.61.930")
+                if '.' in s:
+                    parts = s.split('.')
+                    s = parts[0] + '.' + ''.join(parts[1:])
+                    
+                return s
 
+            lat = clean_coordinate(match.group(1))
+            lon = clean_coordinate(match.group(2))
+            
+            # --- PASO 4: INYECTOR DE PUNTO (Si desapareció) ---
+            def inject_missing_dot(coord_str):
+                if '.' in coord_str:
+                    return coord_str
+                
+                offset = 1 if coord_str.startswith('-') else 0
+                insert_pos = offset + 2 
+                
+                if len(coord_str) > insert_pos:
+                    return coord_str[:insert_pos] + '.' + coord_str[insert_pos:]
+                return coord_str
+
+            lat = inject_missing_dot(lat)
+            lon = inject_missing_dot(lon)
+            
+            return lat, lon
+            
         return None, None
 
     @staticmethod
