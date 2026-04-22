@@ -1,14 +1,24 @@
 services:
   intermapper_ocr_agent:
     build: .
-    container_name: noc_intermapper_agent
+    container_name: intermapper_ocr_towers
     restart: unless-stopped
     env_file:
       - .env
     environment:
-      - TZ=America/Puerto_Rico
+      INTERMAPPER_URL: "${INTERMAPPER_URL}"
+      INTERMAPPER_USER: "${INTERMAPPER_USER}"
+      INTERMAPPER_PASS: "${INTERMAPPER_PASS}"
+      SCREENSHOT_DIR: "${SCREENSHOT_DIR}"
+      CONCURRENT_WORKERS: "${CONCURRENT_WORKERS}"
+      DB_HOST: "${DB_HOST}"
+      DB_USER: "${DB_USER}"
+      DB_PASS: "${DB_PASS}"
+      DB_NAME: "${DB_NAME}"
     volumes:
       # Persistencia de logs para monitoreo
       - ./logs:/app/logs
       # (Opcional) Persistencia de capturas si decides no borrarlas en algún momento
       - ./screenshots:/app/screenshots
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

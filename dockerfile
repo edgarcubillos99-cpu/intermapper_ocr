@@ -1,5 +1,5 @@
 # Usamos la imagen oficial de Playwright que ya contiene los navegadores compilados
-FROM mcr.microsoft.com/playwright/python:v1.42.0-jammy
+FROM mcr.microsoft.com/playwright/python:v1.58.0-jammy
 
 # Ajuste de zona horaria nativa para el contenedor
 ENV TZ=America/Puerto_Rico
