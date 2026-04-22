@@ -3,9 +3,12 @@ services:
     build: .
     container_name: intermapper_ocr_towers
     restart: unless-stopped
+    ports:
+      - "${APP_PORT}:${APP_PORT}"
     env_file:
       - .env
     environment:
+      APP_PORT: "${APP_PORT}"
       INTERMAPPER_URL: "${INTERMAPPER_URL}"
       INTERMAPPER_USER: "${INTERMAPPER_USER}"
       INTERMAPPER_PASS: "${INTERMAPPER_PASS}"

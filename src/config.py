@@ -6,7 +6,8 @@ from pathlib import Path
 load_dotenv()
 
 class Config:
-
+    
+    APP_PORT = os.getenv("APP_PORT", 8080)
     DB_HOST = os.getenv("DB_HOST", "localhost")
     DB_USER = os.getenv("DB_USER", "root")
     DB_PASS = os.getenv("DB_PASS", "")
