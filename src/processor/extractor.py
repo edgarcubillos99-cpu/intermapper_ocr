@@ -94,9 +94,30 @@ class DataExtractor:
             # --- 2. Tipo de AP ---
             ap_type = "DESCONOCIDO"
             block_upper = block.upper()
-            if 'AC' in block_upper: ap_type = "Rocket AC"
-            elif 'EPMP' in block_upper or 'FORCE' in block_upper: ap_type = "ePMP"
-            elif 'C5C' in block_upper: ap_type = "Mimosa C5c"
+
+            # Evaluamos de lo más específico a lo más general para evitar sobreescrituras
+            # Familia Wave / Wabe AP
+            if 'WAVE' in block_upper or 'WABE' in block_upper: 
+                ap_type = "Wave AP"
+            # Familia ePMP
+            elif 'EPMP4600' in block_upper or 'EPMP 4600' in block_upper: 
+                ap_type = "ePMP4600"
+            elif 'EPMP4500' in block_upper or 'EPMP 4500' in block_upper: 
+                ap_type = "ePMP4500"
+            elif 'EPMP3000' in block_upper or 'EPMP 3000' in block_upper: 
+                ap_type = "ePMP3000"
+            elif 'EPMP2000' in block_upper or 'EPMP 2000' in block_upper: 
+                ap_type = "ePMP2000"
+            elif 'EPMP' in block_upper or 'FORCE' in block_upper: 
+                ap_type = "ePMP"
+            # Familia AC
+            elif 'LITE AC' in block_upper or 'LITEAC' in block_upper: 
+                ap_type = "Lite AC"
+            elif 'ROCKET AC' in block_upper or 'ROCKETAC' in block_upper or 'AC' in block_upper: 
+                ap_type = "Rocket AC"
+            # Otros
+            elif 'C5C' in block_upper: 
+                ap_type = "Mimosa C5c"
             
             # --- 3. Azimut (Regla defensiva) ---
             # Busca de 1 a 3 dígitos, ignora basura, busca la orientación
