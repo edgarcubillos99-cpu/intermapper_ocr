@@ -1,6 +1,8 @@
 import asyncio
+
 from src.config import Config
 from src.logger import get_logger
+from src.scraper.tower_naming import tower_name_from_screenshot_stem
 
 logger = get_logger(__name__)
 
@@ -40,7 +42,7 @@ class IntermapperScraper:
         return unique_links
 
     async def process_site(self, url, semaphore):
-        """Navega a un site específico y toma la captura."""
+        """Navega a un site específico y toma la captura. Devuelve (torre, ruta_png, url) o None."""
         async with semaphore:
             page = await self.context.new_page()
             try:
@@ -48,26 +50,31 @@ class IntermapperScraper:
                 await page.route("**/*.{png,jpg,jpeg}", lambda route: route.continue_())
 
                 logger.info(f"Navegando al site: {url}")
- 
+
                 # Intermapper nos redirigirá a la URL completa del submapa.
                 await page.goto(url, wait_until="networkidle")
-                
+
                 # Le damos 2 segundos extra para que los nodos SVG/iconos terminen de renderizar
                 await asyncio.sleep(2)
-                
+
                 title = await page.title()
                 safe_name = "".join([c if c.isalnum() else "_" for c in title]).strip("_")
-                
+
                 # Si el título está vacío por alguna razón, usamos un hash de la URL
                 if not safe_name:
                     safe_name = f"site_{hash(url)}"
-                
+
                 screenshot_path = Config.SCREENSHOT_DIR / f"{safe_name}.png"
-                
+
                 await page.screenshot(path=screenshot_path, full_page=True)
                 logger.info(f"📸 Captura guardada: {screenshot_path}")
-                
+
+                tower_name = tower_name_from_screenshot_stem(screenshot_path.stem)
+                final_url = page.url
+                return (tower_name, screenshot_path, final_url)
+
             except Exception as e:
                 logger.error(f"Error procesando {url}: {e}")
+                return None
             finally:
                 await page.close()

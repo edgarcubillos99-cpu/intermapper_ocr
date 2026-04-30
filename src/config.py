@@ -5,10 +5,19 @@ from pathlib import Path
 # Cargar variables desde el archivo .env
 load_dotenv()
 
+
+def _int_env(name: str, default: int) -> int:
+    raw = os.getenv(name)
+    if raw is None or str(raw).strip() == "":
+        return default
+    return int(raw)
+
+
 class Config:
-    
+
     APP_PORT = os.getenv("APP_PORT", 8080)
     DB_HOST = os.getenv("DB_HOST", "localhost")
+    DB_PORT = _int_env("DB_PORT", 3306)
     DB_USER = os.getenv("DB_USER", "root")
     DB_PASS = os.getenv("DB_PASS", "")
     DB_NAME = os.getenv("DB_NAME", "intermapper_db")

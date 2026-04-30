@@ -15,6 +15,7 @@ services:
       SCREENSHOT_DIR: "${SCREENSHOT_DIR}"
       CONCURRENT_WORKERS: "${CONCURRENT_WORKERS}"
       DB_HOST: "${DB_HOST}"
+      DB_PORT: "${DB_PORT:-3306}"
       DB_USER: "${DB_USER}"
       DB_PASS: "${DB_PASS}"
       DB_NAME: "${DB_NAME}"
