@@ -96,10 +96,10 @@ class OCREngine:
                 x, y, w, h = d['left'][i], d['top'][i], d['width'][i], d['height'][i]
 
                 # --- PASADA 2: RECORTAR (CROP) LA REGIÓN ---
-                margen_izq = 30
-                margen_der = 250   
-                margen_arriba = 20
-                margen_abajo = 250 
+                margen_izq = 10
+                margen_der = 250
+                margen_arriba = 10
+                margen_abajo = 50
 
                 y_start = max(0, y - margen_arriba)
                 y_end = min(gray_base.shape[0], y + h + margen_abajo)

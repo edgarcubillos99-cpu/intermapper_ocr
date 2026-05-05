@@ -9,7 +9,7 @@ from src.logger import get_logger
 
 logger = get_logger(__name__)
 
-# Sufijos de tipo de AP en Intermapper (ePMP, Rocket, Lite…) — no forman parte del id OSNAP para cruzar con el OCR.
+# Sufijos de tipo de AP en Intermapper (ePMP, Rocket, Lite…)
 _TRAILING_AP_TYPE = tuple(
     re.compile(p, re.IGNORECASE)
     for p in (
@@ -22,6 +22,17 @@ _TRAILING_AP_TYPE = tuple(
         r"\s+ePMP\s*\d+\s*\(OMNI\)",
         r"\s+ePMP\s+\d+\b",
         r"\s+ePMP\s*\d+L?\b",
+        r"\s+ePMPEPMP\d+L?\b",
+        r"\s+EPMPePMP\d+L?\b",
+        r"\s+EPMPEPMP\d+L?\b",
+        r"\s+EPMP\s*Force\s*(?:1000|2000|3000|4500|4600)\w*\b",
+        r"\s+EPMP\s+\d{3,4}\s*L?",
+        r"\s+EPMP\s*\d{3,4}\s*L?",
+        r"\s+EPMP\s*\d+L?\s*\(?OMNI\)?",
+        r"\s+EPMP\s*\d+\s*OMNI\b",
+        r"\s+EPMP\s*\d+\s*\(OMNI\)",
+        r"\s+EPMP\s+\d+\b",
+        r"\s+EPMP\s*\d+L?\b",
         r"\s+LiteAP\s*AC\b",
         r"\s+Lite\s*AC\b",
         r"\s+LiteBeam\s*5AC\b",
@@ -36,14 +47,12 @@ _TRAILING_AP_TYPE = tuple(
         r"\s+Wave\s*60\b",
         r"\s+WAVE\s*60\b",
         r"\s+OMNI\b",
-        # "… Cayey ePMP 3000" / "… Salina ePMP …" al final del nombre
         r"\s+[A-Za-z]{3,20}\s+ePMP\s+\d+\b",
     )
 )
 
 _PARENS_END = re.compile(r"\s*\([^)]{0,160}\)\s*$", re.IGNORECASE)
 
-# OCR a veces deja solo el modelo como "OSNAP98-A 3000"
 _OCR_TRAILING_MODEL = re.compile(
     r"(\bOSNAP\d+[A-Z]*-[A-Z0-9]+)\s+\d{3,4}L?\s*$", re.IGNORECASE
 )
@@ -95,7 +104,6 @@ class DBManager:
         try:
             cursor = conn.cursor()
             
-            # 1. Maestro de Torres (Ahora el 'nombre' es la Llave Primaria)
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS torres (
                     nombre VARCHAR(150) PRIMARY KEY,
@@ -105,7 +113,6 @@ class DBManager:
                 )
             """)
 
-            # 2. Capturas de los Submapas (Relacionado por el nombre de la torre)
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS submapas (
                     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -116,7 +123,6 @@ class DBManager:
                 )
             """)
 
-            # 3. Dispositivos AP (Ahora contiene el torre_nombre directamente)
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS dispositivos_ap (
                     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -132,18 +138,13 @@ class DBManager:
                     FOREIGN KEY (torre_nombre) REFERENCES torres(nombre) ON DELETE CASCADE
                 )
             """)
-            cursor.execute(
-                "SHOW COLUMNS FROM dispositivos_ap LIKE %s", ("ip_address",)
-            )
+            cursor.execute("SHOW COLUMNS FROM dispositivos_ap LIKE %s", ("ip_address",))
             if not cursor.fetchone():
-                cursor.execute(
-                    """
+                cursor.execute("""
                     ALTER TABLE dispositivos_ap
                     ADD COLUMN ip_address VARCHAR(45) NULL DEFAULT NULL AFTER altura
-                    """
-                )
+                """)
             
-            # Vista 1: Inventario Completo
             cursor.execute("""
                 CREATE OR REPLACE VIEW view_inventario_completo AS
                 SELECT 
@@ -161,7 +162,6 @@ class DBManager:
                     LEFT JOIN submapas c ON t.nombre = c.torre_nombre;
             """)
 
-            # Vista 2: Resumen agrupado
             cursor.execute("""
                 CREATE OR REPLACE VIEW view_resumen_torres AS
                 SELECT 
@@ -190,7 +190,6 @@ class DBManager:
             cursor = conn.cursor()
             conn.start_transaction()
 
-            # 1. Insertar Torre
             cursor.execute("""
             INSERT INTO torres (nombre, latitud, longitud) 
             VALUES (%s, %s, %s)
@@ -199,7 +198,6 @@ class DBManager:
             longitud = VALUES(longitud)
             """, (tower_name, lat, lon))
 
-            # 2. Insertar o Actualizar Captura (Usando tower_name directo)
             cursor.execute("""
                 INSERT INTO submapas (torre_nombre, ruta_imagen) 
                 VALUES (%s, %s)
@@ -208,7 +206,6 @@ class DBManager:
                 fecha_captura = CURRENT_TIMESTAMP
             """, (tower_name, str(screenshot_path)))
 
-            # 3. Insertar o Actualizar Dispositivos AP (Usando tower_name directo)
             if devices:
                 ap_data = [
                     (tower_name, ap['AP_Name'], ap['Tipo'], ap['Azimut'], ap['Tilt'], ap['Altura'])
@@ -240,7 +237,6 @@ class DBManager:
 
     @staticmethod
     def _strip_ap_type_suffix(raw: str) -> str:
-        """Elimina tipo de equipo al final (y paréntesis) para comparar con ap_name del OCR."""
         s = (raw or "").strip()
         for _ in range(24):
             t = _PARENS_END.sub("", s).strip()
@@ -259,14 +255,17 @@ class DBManager:
     def _norm_for_ip_match(s: str) -> str:
         return " ".join(DBManager._strip_ap_type_suffix(s).lower().split())
 
+    @staticmethod
+    def _split_osnap_name_type(raw_label: str) -> tuple[str, str]:
+        """Separa el nombre exacto del tipo basado en el HTML."""
+        m = re.match(r"^(OSNAP[^\s]+)\s+(.+)$", raw_label.strip(), re.IGNORECASE)
+        if m:
+            return m.group(1).upper(), m.group(2).strip()
+        return raw_label.strip().upper(), "DESCONOCIDO"
+
     def apply_scraped_ip_addresses(
         self, torre_nombre: str, name_ip_pairs: list[tuple[str, str]]
     ):
-        """
-        Actualiza ip_address (y opcionalmente ap_name) en dispositivos_ap.
-        name_ip_pairs: (nombre como en Intermapper / Device List, ip).
-        1) Coincidencia exacta (normalizada). 2) Mejor coincidencia difusa para el resto.
-        """
         conn = self.get_connection()
         if not conn or not name_ip_pairs:
             return
@@ -287,24 +286,26 @@ class DBManager:
 
             # --- Paso 1: exactas (nombres sin sufijo de tipo) ---
             for im_name, ip in list(pending):
+                # Extraemos Nombre Puro y Tipo del HTML
+                clean_name, clean_type = self._split_osnap_name_type(im_name)
+                
                 n_im = self._norm_for_ip_match(im_name)
                 for rid, db_name in rows:
                     if rid in used_ids:
                         continue
                     if self._norm_for_ip_match(db_name) == n_im:
+                        # UPDATE CORREGIDO: Actualiza Nombre, Tipo e IP
                         cursor.execute(
                             """
                             UPDATE dispositivos_ap
-                            SET ip_address = %s
+                            SET ip_address = %s, tipo = %s, ap_name = %s
                             WHERE id = %s
                             """,
-                            (ip, rid),
+                            (ip, clean_type, clean_name, rid),
                         )
                         used_ids.add(rid)
                         pending.remove((im_name, ip))
-                        logger.info(
-                            f"[{torre_nombre}] IP (exacto) {db_name!r} → {ip}"
-                        )
+                        logger.info(f"[{torre_nombre}] Corrección Exacta: OCR '{db_name}' -> HTML '{clean_name}' | Tipo: {clean_type} | IP: {ip}")
                         break
 
             # --- Paso 2: difuso ---
@@ -312,6 +313,8 @@ class DBManager:
             remaining_rows = [(rid, dbn) for rid, dbn in rows if rid not in used_ids]
 
             for im_name, ip in list(pending):
+                clean_name, clean_type = self._split_osnap_name_type(im_name)
+                
                 n_im = self._norm_for_ip_match(im_name)
                 best: tuple[float, int, str] | None = None
                 for rid, db_name in remaining_rows:
@@ -328,35 +331,34 @@ class DBManager:
 
                 _, rid, db_name = best
                 try:
+                    # UPDATE CORREGIDO: Actualiza Nombre, Tipo e IP
                     cursor.execute(
                         """
                         UPDATE dispositivos_ap
-                        SET ap_name = %s, ip_address = %s
+                        SET ap_name = %s, tipo = %s, ip_address = %s
                         WHERE id = %s
                         """,
-                        (im_name.strip(), ip, rid),
+                        (clean_name, clean_type, ip, rid),
                     )
                     remaining_rows = [x for x in remaining_rows if x[0] != rid]
                     used_ids.add(rid)
                     pending.remove((im_name, ip))
-                    logger.info(
-                        f"[{torre_nombre}] IP (difuso) {db_name!r} → {im_name!r} / {ip}"
-                    )
+                    logger.info(f"[{torre_nombre}] Corrección Difusa: OCR '{db_name}' -> HTML '{clean_name}' | Tipo: {clean_type} | IP: {ip}")
                 except Error as e:
                     if getattr(e, "errno", None) == 1062:
                         cursor.execute(
                             """
                             UPDATE dispositivos_ap
-                            SET ip_address = %s
+                            SET ip_address = %s, tipo = %s
                             WHERE torre_nombre = %s AND ap_name = %s
                             """,
-                            (ip, torre_nombre, im_name.strip()),
+                            (ip, clean_type, torre_nombre, clean_name),
                         )
                         remaining_rows = [x for x in remaining_rows if x[0] != rid]
                         used_ids.add(rid)
                         pending.remove((im_name, ip))
                         logger.warning(
-                            f"[{torre_nombre}] Nombre {im_name!r} ya existía; solo IP actualizada ({ip})."
+                            f"[{torre_nombre}] Nombre {clean_name!r} ya existía; IPs y Tipo actualizados."
                         )
                     else:
                         raise
