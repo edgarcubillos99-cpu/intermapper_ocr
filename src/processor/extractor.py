@@ -120,9 +120,17 @@ class DataExtractor:
                 ap_type = "Mimosa C5c"
             
             # --- 3. Azimut (Regla defensiva) ---
-            # Busca de 1 a 3 dígitos, ignora basura, busca la orientación
-            az_match = re.search(r'(\d{1,3})[^NSEOW\d]*?([NSEOW]{1,2})\b', block, re.IGNORECASE)
-            azimut = f"{az_match.group(1)}Â°{az_match.group(2).upper()}" if az_match else "N/A"
+            # Grupo 1: El número (1 a 3 dígitos)
+            # Grupo 2 (Opcional): La letra de orientación (N, S, E, O)
+            azimut_pattern = r"\b(\d{1,3})\s*(?:Â[°º]|[°º]|A[°º]|A\s*A[°º]|A\s*Ae|Ae|R\s*AP|A\s*AP|A|R)\s*([NSEO]{1,2})?"
+            az_match = re.search(azimut_pattern, block, re.IGNORECASE)
+            
+            if az_match:
+                grados = az_match.group(1)
+                orientacion = az_match.group(2).upper() if az_match.group(2) else ""
+                azimut = f"{grados}°{orientacion}"
+            else:
+                azimut = "N/A"
             
             # --- 4. Altura (Regla defensiva) ---
             # Atrapa los dígitos, ignora basura (', ’, 7, °), y requiere f/t
