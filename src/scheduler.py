@@ -57,13 +57,16 @@ if __name__ == "__main__":
     # 1. Iniciar el servidor web en un hilo en segundo plano (daemon)
     threading.Thread(target=run_server, daemon=True).start()
 
-    logger.info("Iniciando el Demonio del Scheduler (Intervalo: 1 semana)")
-    
-    # 2. Ejecutamos una vez inmediatamente
+    logger.info(
+        "Iniciando el Demonio del Scheduler "
+        "(primera ejecución inmediata; luego cada sábado a las 02:00)"
+    )
+
+    # 2. Primera ejecución al arrancar
     job()
-    
-    # 3. Programamos la ejecución
-    schedule.every(1).week.do(job)
+
+    # 3. Siguientes ejecuciones: cada sábado a las 02:00 (hora local del sistema)
+    schedule.every().saturday.at("02:00").do(job)
 
     # Bucle infinito
     while True:
