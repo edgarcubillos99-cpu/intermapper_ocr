@@ -2,7 +2,12 @@ import asyncio
 
 from src.config import Config
 from src.logger import get_logger
-from src.scraper.tower_naming import tower_name_from_screenshot_stem
+from src.scraper.tower_naming import (
+    MAX_SCREENSHOT_STEM_BASE,
+    fallback_map_slug_from_url,
+    map_slug_from_intermapper_url,
+    tower_name_from_screenshot_stem,
+)
 
 logger = get_logger(__name__)
 
@@ -64,13 +69,21 @@ class IntermapperScraper:
                 if not safe_name:
                     safe_name = f"site_{hash(url)}"
 
-                screenshot_path = Config.SCREENSHOT_DIR / f"{safe_name}.png"
+                if len(safe_name) > MAX_SCREENSHOT_STEM_BASE:
+                    safe_name = safe_name[:MAX_SCREENSHOT_STEM_BASE].rstrip("_")
+
+                final_url = page.url
+                map_slug = map_slug_from_intermapper_url(final_url) or fallback_map_slug_from_url(
+                    final_url
+                )
+                screenshot_path = (
+                    Config.SCREENSHOT_DIR / f"{safe_name}__intermapper_{map_slug}.png"
+                )
 
                 await page.screenshot(path=screenshot_path, full_page=True)
                 logger.info(f"📸 Captura guardada: {screenshot_path}")
 
                 tower_name = tower_name_from_screenshot_stem(screenshot_path.stem)
-                final_url = page.url
                 return (tower_name, screenshot_path, final_url)
 
             except Exception as e:
